@@ -14,6 +14,7 @@ warnings.filterwarnings("ignore", message=".*create_react_agent.*")
 
 from dotenv import load_dotenv  # noqa: E402
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
@@ -21,13 +22,29 @@ load_dotenv()
 
 LARGEUR_ARGUMENTS = 60
 
-# Ce prompt cadre le format de la réponse mais ne décrit PAS l'enchaînement des
-# outils : les descriptions fournies par le serveur MCP s'en chargent déjà.
-# C'est précisément ce que la démonstration cherche à montrer.
+# Ce prompt ne décrit PAS l'enchaînement des outils : les descriptions fournies
+# par le serveur MCP s'en chargent déjà, et c'est ce que la démonstration montre.
+#
+# En revanche il tranche les ambiguïtés de SOURCE. Sans ce cadrage, l'agent
+# hésitait entre plusieurs bases nationales IRVE et plusieurs ressources, et
+# renvoyait un chiffre différent à chaque exécution (1 099, puis 944, puis
+# 1 212). C'est le rôle normal d'un prompt système en production. Il n'est pas
+# projeté pendant la démonstration : la question posée à l'écran reste naturelle.
 SYSTEME = (
     "Tu réponds en français, de façon concise. "
     "Tu utilises exclusivement les outils data.gouv.fr pour trouver tes chiffres. "
-    "Tu cites toujours l'URL data.gouv.fr de la source utilisée."
+    "Tu cites toujours l'URL data.gouv.fr de la source utilisée.\n"
+    "Méthode à suivre :\n"
+    "- Pour chercher un jeu, emploie deux ou trois mots-clés spécifiques et "
+    "n'y mets jamais le nom de la commune : la recherche combine les mots par "
+    "un ET logique et ne renverrait rien.\n"
+    "- Si plusieurs jeux de données conviennent, retiens celui publié par "
+    "l'organisation data.gouv.fr elle-même et ignore les versions beta.\n"
+    "- Dans un jeu, retiens la ressource CSV consolidée la plus récente.\n"
+    "- Pour compter les enregistrements d'une commune, filtre avec "
+    "filter_column='code_insee_commune', filter_operator='exact', puis lis le "
+    "nombre total de lignes renvoyé par l'outil.\n"
+    "- Dès que tu disposes d'une réponse chiffrée, arrête-toi et réponds."
 )
 
 
@@ -62,10 +79,14 @@ def format_tool_result(content: str, seconds: float) -> str:
     return f"   ← {taille} caractères en {duree} s"
 
 
-async def discover_tools() -> list:
-    """Ouvre la connexion MCP et renvoie les outils exposés par le serveur."""
-    client = MultiServerMCPClient(load_servers())
-    return await client.get_tools()
+async def discover_tools(session) -> list:
+    """Renvoie les outils exposés par le serveur, sur une session déjà ouverte.
+
+    On passe par une session explicite plutôt que par MultiServerMCPClient.get_tools() :
+    ce dernier ouvre une connexion HTTP neuve à CHAQUE appel d'outil, ce qui multiplie
+    les occasions de tomber sur un httpx.ConnectTimeout. Une session unique suffit.
+    """
+    return await load_mcp_tools(session)
 
 
 def build_model() -> ChatOpenAI:
@@ -89,27 +110,31 @@ def build_model() -> ChatOpenAI:
 
 
 async def main(question: str) -> None:
-    tools = await discover_tools()
-    print(f"→ {len(tools)} outils découverts : {', '.join(o.name for o in tools)}\n")
+    serveurs = load_servers()
+    client = MultiServerMCPClient(serveurs)
 
-    agent = create_react_agent(model=build_model(), tools=tools, prompt=SYSTEME)
-    chronos: dict[str, float] = {}
+    async with client.session(next(iter(serveurs))) as session:
+        tools = await discover_tools(session)
+        print(f"→ {len(tools)} outils découverts : {', '.join(o.name for o in tools)}\n")
 
-    async for etape in agent.astream(
-        {"messages": [("user", question)]}, stream_mode="updates"
-    ):
-        for noeud, contenu in etape.items():
-            for message in contenu.get("messages", []):
-                if noeud == "agent" and getattr(message, "tool_calls", None):
-                    for appel in message.tool_calls:
-                        print(format_tool_call(appel["name"], appel["args"]))
-                        chronos[appel["id"]] = time.perf_counter()
-                elif noeud == "tools":
-                    debut = chronos.pop(message.tool_call_id, None)
-                    ecoule = time.perf_counter() - debut if debut else 0.0
-                    print(format_tool_result(str(message.content), ecoule))
-                elif noeud == "agent" and message.content:
-                    print(f"\n💬 {message.content}")
+        agent = create_react_agent(model=build_model(), tools=tools, prompt=SYSTEME)
+        chronos: dict[str, float] = {}
+
+        async for etape in agent.astream(
+            {"messages": [("user", question)]}, stream_mode="updates"
+        ):
+            for noeud, contenu in etape.items():
+                for message in contenu.get("messages", []):
+                    if noeud == "agent" and getattr(message, "tool_calls", None):
+                        for appel in message.tool_calls:
+                            print(format_tool_call(appel["name"], appel["args"]))
+                            chronos[appel["id"]] = time.perf_counter()
+                    elif noeud == "tools":
+                        debut = chronos.pop(message.tool_call_id, None)
+                        ecoule = time.perf_counter() - debut if debut else 0.0
+                        print(format_tool_result(str(message.content), ecoule))
+                    elif noeud == "agent" and message.content:
+                        print(f"\n💬 {message.content}")
 
 
 if __name__ == "__main__":
