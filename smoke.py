@@ -60,5 +60,48 @@ def check_mcp() -> bool:
     return len(tools) > 0
 
 
+def check_llm() -> bool:
+    """Vérifie que le déploiement Azure répond ET sait appeler un outil."""
+    from dotenv import load_dotenv
+    from langchain_core.tools import tool
+    from langchain_openai import ChatOpenAI
+
+    load_dotenv()
+
+    @tool
+    def addition(a: int, b: int) -> int:
+        """Additionne deux entiers."""
+        return a + b
+
+    try:
+        modele = ChatOpenAI(
+            model=os.environ["AZURE_DEPLOYMENT"],
+            base_url=os.environ["AZURE_BASE_URL"],
+            api_key=os.environ["AZURE_API_KEY"],
+            temperature=0,
+        )
+        reponse = modele.bind_tools([addition]).invoke(
+            "Combien font 17 plus 25 ? Utilise l'outil à ta disposition."
+        )
+    except KeyError as manquante:
+        print(f"[KO] variable d'environnement absente : {manquante}")
+        print("     Copier .env.example vers .env et renseigner les valeurs.")
+        return False
+    except Exception as erreur:
+        print(f"[KO] modèle Azure injoignable : {erreur}")
+        return False
+
+    if not reponse.tool_calls:
+        print("[KO] le modèle a répondu mais n'a appelé aucun outil.")
+        print("     Le tool calling est indispensable : voir le repli AzureChatOpenAI.")
+        return False
+
+    appel = reponse.tool_calls[0]
+    print(f"[OK] tool calling confirmé : {appel['name']}({appel['args']})")
+    return True
+
+
 if __name__ == "__main__":
-    sys.exit(0 if check_mcp() else 1)
+    # Les deux blocs s'exécutent toujours : on veut savoir LEQUEL a lâché.
+    resultats = [check_mcp(), check_llm()]
+    sys.exit(0 if all(resultats) else 1)
