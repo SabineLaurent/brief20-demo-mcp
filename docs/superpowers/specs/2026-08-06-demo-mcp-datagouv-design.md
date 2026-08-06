@@ -245,8 +245,15 @@ une vingtaine de secondes et le public ne voit pas le protocole à l'œuvre.
    recherche combinant les termes par un ET logique. C'est le rôle normal d'un prompt
    système en production, et il n'est pas projeté pendant la démonstration : la
    question affichée reste naturelle.
-3. **Le prompt passe en argument de ligne de commande.** Un seul fichier sert les deux
-   scénarios, sans changement de fenêtre en direct.
+3. **La question se saisit au clavier, ou se passe en argument.** Sans argument,
+   `agent.py` la demande à l'invite : taper la question en direct est plus vivant
+   qu'une commande pré-écrite, et supprime les mésaventures de quoting sur les
+   apostrophes françaises. Un seul fichier sert les deux scénarios.
+
+4. **La réponse est produite en texte brut.** Le terminal ne rend pas le markdown :
+   sans cette consigne, la ligne la plus importante s'affichait avec ses astérisques
+   de gras et son lien entre crochets. Les blocs de code restent autorisés, car le
+   scénario 2 y gagne un exemple `curl` lisible.
 
 ## 6. Déroulé de la démonstration
 
@@ -343,6 +350,22 @@ une démonstration.
 Vérification complémentaire : la commande `curl` produite par l'agent au scénario 2 a
 été exécutée et fonctionne (score 0,98, coordonnées correctes). Elle peut être lancée
 en direct comme prolongement du scénario.
+
+### 8.2 Revalidation après passage en texte brut et saisie au clavier
+
+| Critère | Mesure | Verdict |
+|---|---|---|
+| 2 — scénario 1 | 3 exécutions : 4 à 6 appels, 16 à 20 s, **1 099** à chaque fois, zéro markdown résiduel | ✅ |
+| 3 — scénario 2 | 3 exécutions : 3 appels, 14 à 15 s, blocs de code conservés | ✅ |
+| 4 — stabilité | 3/3 et 3/3 | ✅ |
+| Tests unitaires | 8 passed | ✅ |
+
+L'agent produit désormais un `curl --get --data-urlencode`, plus propre que la version
+à URL encodée manuellement. Exécutée, elle renvoie un score de 0,971.
+
+Contrôle croisé sur une seconde ville : Bordeaux (`33063`) donne 1 060 points de
+recharge, ce qui correspond à la mesure faite directement sur l'API lors de la
+conception.
 
 ## 9. Plan de repli
 

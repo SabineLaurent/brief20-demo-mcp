@@ -20,6 +20,17 @@ environnement installé, ce qui permet de diagnostiquer le réseau en premier.
 
 ## Utilisation
 
+Sans argument, l'agent demande la question au clavier — plus vivant en
+démonstration qu'une commande pré-écrite, et sans souci de quoting sur les
+apostrophes françaises :
+
+```bash
+uv run agent.py
+❓ Ta question : Combien de points de recharge y a-t-il à Bordeaux ?
+```
+
+La question peut aussi être passée en argument :
+
 ```bash
 # Scénario 1 — la question chiffrée
 uv run agent.py "Combien de points de recharge pour véhicules électriques y a-t-il à Toulouse ? Cite ta source."
@@ -28,8 +39,16 @@ uv run agent.py "Combien de points de recharge pour véhicules électriques y a-
 uv run agent.py "Trouve une API publique de géocodage d'adresses sur data.gouv.fr et explique-moi concrètement comment l'appeler."
 ```
 
-Mesures relevées le 2026-08-06 : scénario 1, 4 à 5 appels d'outils en 13 à 18 s ;
-scénario 2, 3 appels en 16 s. Les deux sont stables sur plusieurs exécutions.
+Mesures relevées le 2026-08-06 : scénario 1, 4 à 6 appels d'outils en 16 à 20 s,
+1 099 à chaque exécution ; scénario 2, 3 appels en 14 à 15 s. Les deux sont
+stables sur plusieurs exécutions.
+
+Villes vérifiées : Toulouse (`31555`) donne 1 099, Bordeaux (`33063`) donne
+1 060. Éviter Paris et Lyon, dont les points de recharge sont éclatés entre les
+codes INSEE d'arrondissement.
+
+La réponse est produite en texte brut : le terminal ne rend pas le markdown, et
+des astérisques de gras à l'écran parasitent la ligne la plus importante.
 
 **Bonus pour le scénario 2** : l'agent produit une commande `curl` réellement
 exécutable. La lancer en direct est le meilleur prolongement de la démonstration.

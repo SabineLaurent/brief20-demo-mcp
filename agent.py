@@ -44,7 +44,11 @@ SYSTEME = (
     "- Pour compter les enregistrements d'une commune, filtre avec "
     "filter_column='code_insee_commune', filter_operator='exact', puis lis le "
     "nombre total de lignes renvoyé par l'outil.\n"
-    "- Dès que tu disposes d'une réponse chiffrée, arrête-toi et réponds."
+    "- Dès que tu disposes d'une réponse chiffrée, arrête-toi et réponds.\n"
+    "Mise en forme : la réponse s'affiche dans un terminal qui ne rend pas le "
+    "markdown. N'emploie donc ni astérisques de gras, ni liens entre crochets : "
+    "écris l'URL de la source telle quelle, sur sa propre ligne. Les blocs de "
+    "code délimités par des accents graves restent en revanche bienvenus."
 )
 
 
@@ -137,8 +141,21 @@ async def main(question: str) -> None:
                         print(f"\n💬 {message.content}")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print('Usage : uv run agent.py "ta question"')
+def lire_question(argv: list[str]) -> str:
+    """Renvoie la question passée en argument, ou la demande au clavier.
+
+    Saisir la question en direct est plus vivant qu'une commande pré-écrite, et
+    évite les mésaventures de quoting sur les apostrophes françaises.
+    """
+    if len(argv) > 1:
+        return " ".join(argv[1:]).strip()
+
+    question = input("❓ Ta question : ").strip()
+    if not question:
+        print("Aucune question saisie.")
         sys.exit(1)
-    asyncio.run(main(sys.argv[1]))
+    return question
+
+
+if __name__ == "__main__":
+    asyncio.run(main(lire_question(sys.argv)))
