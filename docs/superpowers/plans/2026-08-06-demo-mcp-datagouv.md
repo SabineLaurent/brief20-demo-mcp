@@ -172,9 +172,16 @@ C'est la tâche qui lève l'incertitude sur le déploiement `gpt-5.6-luna`. Elle
 
 ```bash
 uv init --python 3.12 --no-workspace --bare
+uv python pin 3.12          # indispensable : voir la note ci-dessous
 uv add langchain-mcp-adapters langgraph langchain-openai python-dotenv
 uv add --dev pytest
 ```
+
+Attention : `uv init --python 3.12` écrit seulement `requires-python = ">=3.12"`
+et ne crée pas de `.python-version`. Sans `uv python pin 3.12`, uv résout
+l'environnement sur le Python le plus récent disponible — 3.14 en l'occurrence,
+sur lequel la pile LangChain est nettement moins éprouvée. Une démonstration
+publique n'est pas l'endroit où le découvrir.
 
 - [ ] **Step 2 : Créer `.env.example`**
 
@@ -265,6 +272,10 @@ git commit -m "Ajoute l'environnement Python et le test de fumée du modèle Azu
 - Produces: `load_servers(path: str = "mcp.json") -> dict[str, dict[str, str]]`, `format_tool_call(name: str, args: dict) -> str`, `format_tool_result(content: str, seconds: float) -> str`
 
 - [ ] **Step 1 : Écrire les tests qui échouent**
+
+Créer aussi un `conftest.py` **vide** à la racine. Sans lui, pytest insère
+`tests/` dans `sys.path` mais pas la racine, et l'import de `agent` échoue.
+La seule présence du fichier suffit ; cela évite de modifier `pyproject.toml`.
 
 Créer `tests/test_agent.py` :
 
@@ -406,6 +417,16 @@ async def discover_tools() -> list:
 
 def build_model() -> ChatOpenAI:
     """Construit le modèle Azure via l'API v1 compatible OpenAI."""
+    manquantes = [
+        nom
+        for nom in ("AZURE_DEPLOYMENT", "AZURE_BASE_URL", "AZURE_API_KEY")
+        if nom not in os.environ
+    ]
+    if manquantes:
+        print(f"\nVariables d'environnement absentes : {', '.join(manquantes)}")
+        print("Copier .env.example vers .env et renseigner les valeurs.")
+        sys.exit(1)
+
     return ChatOpenAI(
         model=os.environ["AZURE_DEPLOYMENT"],
         base_url=os.environ["AZURE_BASE_URL"],
@@ -648,4 +669,15 @@ restante : le rendu n'a pas pu être vérifié sans installer le CLI Mermaid.
 
 **Cohérence des signatures.** `load_servers`, `format_tool_call`, `format_tool_result` sont définies en Task 3 et consommées telles quelles en Tasks 4 et 5. `discover_tools` et `build_model` sont définies en Task 4 et consommées en Task 5. `mcp_call` et `check_mcp` sont définies en Task 1, `check_llm` en Task 2, et le bloc `__main__` de `smoke.py` les appelle toutes les deux.
 
-**Point de vigilance connu.** Les noms de nœuds `"agent"` et `"tools"` utilisés en Task 5 sont ceux de `create_react_agent` de `langgraph.prebuilt`. S'ils diffèrent dans la version installée, ajouter `print(etape.keys())` en début de boucle pour les relever, puis ajuster.
+**Point de vigilance connu — levé.** Les noms de nœuds `"agent"` et `"tools"` utilisés en Task 5 ont été confirmés dans le source de `langgraph` 1.2.10 (`langgraph/prebuilt/chat_agent_executor.py`, lignes 866-872). Si une version ultérieure les changeait, ajouter `print(etape.keys())` en début de boucle pour les relever.
+
+## Journal d'exécution
+
+Versions installées le 2026-08-06 : `langchain-mcp-adapters` 0.3.2, `langgraph` 1.2.10, `langchain-openai` 1.4.1, `langchain-core` 1.5.3, `python-dotenv` 1.2.2, `pytest` 9.1.1, sur CPython 3.12.13.
+
+Écarts au plan initial, tous répercutés ci-dessus :
+
+1. `from __future__ import annotations` ajouté à `smoke.py` — le `python3` du système macOS est en 3.9 et rejetait `dict | None`.
+2. `uv python pin 3.12` ajouté — sans lui, l'environnement était résolu sur CPython 3.14.5.
+3. `conftest.py` vide ajouté à la racine — sinon `tests/test_agent.py` ne peut pas importer `agent`.
+4. Garde sur les variables d'environnement dans `build_model` — évite un `KeyError` avec traceback en pleine démonstration.
