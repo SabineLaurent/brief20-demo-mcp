@@ -63,8 +63,20 @@ Aucune dépendance : ce fichier doit tourner même si l'environnement Python n'e
 
 Le serveur répond en Server-Sent Events (`event: message` puis `data: {...}`), d'où le parsing par lignes.
 
+Attention : le `python3` du système macOS est en 3.9, qui ne connaît pas la syntaxe
+`dict | None` dans les annotations évaluées. D'où `from __future__ import annotations`,
+qui préserve l'objectif « exécutable avant toute installation ».
+
 ```python
-"""Test de fumée : valide séparément le serveur MCP et le modèle Azure."""
+"""Test de fumée : valide séparément le serveur MCP et le modèle Azure.
+
+Le bloc MCP doit rester exécutable par n'importe quel Python 3, y compris
+celui du système (3.9 sur macOS), afin de pouvoir diagnostiquer le réseau
+avant même que l'environnement du projet ne soit installé. D'où l'import
+`annotations` ci-dessous et l'absence de toute dépendance externe.
+"""
+
+from __future__ import annotations
 
 import json
 import os
