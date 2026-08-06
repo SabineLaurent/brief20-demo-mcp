@@ -15,6 +15,15 @@ load_dotenv()
 
 LARGEUR_ARGUMENTS = 60
 
+# Ce prompt cadre le format de la réponse mais ne décrit PAS l'enchaînement des
+# outils : les descriptions fournies par le serveur MCP s'en chargent déjà.
+# C'est précisément ce que la démonstration cherche à montrer.
+SYSTEME = (
+    "Tu réponds en français, de façon concise. "
+    "Tu utilises exclusivement les outils data.gouv.fr pour trouver tes chiffres. "
+    "Tu cites toujours l'URL data.gouv.fr de la source utilisée."
+)
+
 
 def load_servers(path: str = "mcp.json") -> dict[str, dict[str, str]]:
     """Convertit la configuration au format éditeur vers celui attendu par
@@ -55,6 +64,16 @@ async def discover_tools() -> list:
 
 def build_model() -> ChatOpenAI:
     """Construit le modèle Azure via l'API v1 compatible OpenAI."""
+    manquantes = [
+        nom
+        for nom in ("AZURE_DEPLOYMENT", "AZURE_BASE_URL", "AZURE_API_KEY")
+        if nom not in os.environ
+    ]
+    if manquantes:
+        print(f"\nVariables d'environnement absentes : {', '.join(manquantes)}")
+        print("Copier .env.example vers .env et renseigner les valeurs.")
+        sys.exit(1)
+
     return ChatOpenAI(
         model=os.environ["AZURE_DEPLOYMENT"],
         base_url=os.environ["AZURE_BASE_URL"],
@@ -63,10 +82,32 @@ def build_model() -> ChatOpenAI:
     )
 
 
-async def main() -> None:
+async def main(question: str) -> None:
     tools = await discover_tools()
     print(f"→ {len(tools)} outils découverts : {', '.join(o.name for o in tools)}\n")
 
+    agent = create_react_agent(model=build_model(), tools=tools, prompt=SYSTEME)
+    chronos: dict[str, float] = {}
+
+    async for etape in agent.astream(
+        {"messages": [("user", question)]}, stream_mode="updates"
+    ):
+        for noeud, contenu in etape.items():
+            for message in contenu.get("messages", []):
+                if noeud == "agent" and getattr(message, "tool_calls", None):
+                    for appel in message.tool_calls:
+                        print(format_tool_call(appel["name"], appel["args"]))
+                        chronos[appel["id"]] = time.perf_counter()
+                elif noeud == "tools":
+                    debut = chronos.pop(message.tool_call_id, None)
+                    ecoule = time.perf_counter() - debut if debut else 0.0
+                    print(format_tool_result(str(message.content), ecoule))
+                elif noeud == "agent" and message.content:
+                    print(f"\n💬 {message.content}")
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if len(sys.argv) < 2:
+        print('Usage : uv run agent.py "ta question"')
+        sys.exit(1)
+    asyncio.run(main(sys.argv[1]))
