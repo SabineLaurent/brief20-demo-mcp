@@ -5,8 +5,14 @@ import json
 import os
 import sys
 import time
+import warnings
 
-from dotenv import load_dotenv
+# create_react_agent est déprécié depuis LangGraph 1.0 au profit de
+# langchain.agents.create_agent, qui vit dans un paquet non installé ici.
+# L'avertissement est masqué pour ne pas polluer l'écran pendant la démo.
+warnings.filterwarnings("ignore", message=".*create_react_agent.*")
+
+from dotenv import load_dotenv  # noqa: E402
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
