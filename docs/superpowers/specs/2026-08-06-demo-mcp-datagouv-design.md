@@ -231,10 +231,20 @@ une vingtaine de secondes et le public ne voit pas le protocole à l'œuvre.
 
 1. **`temperature=0`** — la démonstration doit être reproductible d'une exécution à
    l'autre.
-2. **Le prompt système cadre mais ne guide pas.** Il impose le français et la citation
-   de la source, mais ne décrit pas l'enchaînement des outils, puisque les descriptions
-   du serveur le font déjà. C'est ce que la démo cherche à prouver. Si le test de fumée
-   montre que le modèle hésite, un guidage explicite sera ajouté en repli.
+2. **Le prompt système ne décrit pas l'enchaînement des outils**, puisque les
+   descriptions du serveur le font déjà. C'est ce que la démo cherche à prouver, et
+   c'est vérifié : l'agent enchaîne correctement `search_datasets` →
+   `list_dataset_resources` → `query_resource_data` sans qu'on le lui dise.
+
+   **En revanche il tranche les ambiguïtés de source.** Constat à l'exécution : sans
+   ce cadrage, l'agent hésitait entre plusieurs bases nationales IRVE et plusieurs
+   ressources, et renvoyait 1 099, puis 944, puis 1 212 selon les exécutions. Le
+   prompt précise donc de retenir le jeu publié par data.gouv.fr, la ressource
+   consolidée la plus récente, un filtre `exact` sur `code_insee_commune`, et
+   d'employer deux ou trois mots-clés sans nom de commune dans les recherches — la
+   recherche combinant les termes par un ET logique. C'est le rôle normal d'un prompt
+   système en production, et il n'est pas projeté pendant la démonstration : la
+   question affichée reste naturelle.
 3. **Le prompt passe en argument de ligne de commande.** Un seul fichier sert les deux
    scénarios, sans changement de fenêtre en direct.
 
@@ -303,6 +313,9 @@ Ces pièges ont été découverts en interrogeant réellement le serveur.
 | Points de charge et non stations | Le schéma IRVE comporte une ligne par point de charge | Formuler la question et la réponse en « points de recharge » |
 | Valeurs aberrantes | `puissance_nominale` maximale à 160 000 | Ne pas fonder le scénario sur un tri par puissance. Garder le fait comme illustration en conclusion |
 | Fraîcheur quotidienne | La ressource est régénérée chaque jour | Ne pas figer le chiffre attendu dans les tests. Relancer les vérifications le matin de la démo |
+| Deux bases nationales concurrentes | Le jeu historique de data.gouv.fr (créé en 2014) et un jeu `[BETA]` du Point d'Accès National (créé en 2025) sont tous deux actifs et mis à jour quotidiennement, avec des périmètres différents | Trancher dans le prompt système, pas dans la question projetée |
+| Recherche en ET logique | `search_datasets("points recharge véhicules électriques Toulouse")` renvoie **zéro résultat**, ce qui déclenchait trois recherches de rattrapage | Le prompt système impose deux ou trois mots-clés, sans nom de commune |
+| Une connexion HTTP par appel d'outil | `MultiServerMCPClient.get_tools()` ouvre une session neuve à chaque appel — sa docstring le dit — d'où des `httpx.ConnectTimeout` intermittents (1 échec sur 8 exécutions) | Session persistante via `client.session()` + `load_mcp_tools()`. Supprime les timeouts et réduit la durée d'environ 40 % |
 
 ## 8. Critères de succès
 
@@ -317,6 +330,19 @@ La démonstration est prête quand les quatre conditions suivantes sont vraies.
 
 Le critère 4 est déterminant : un scénario qui réussit une fois sur trois n'est pas
 une démonstration.
+
+### 8.1 Résultats de validation, 2026-08-06
+
+| Critère | Mesure | Verdict |
+|---|---|---|
+| 1 — test de fumée | deux `[OK]`, exit 0. Tool calling confirmé sur `gpt-5.6-luna` par le chemin `ChatOpenAI` + `base_url`, sans `api_version` : le repli `AzureChatOpenAI` n'est pas nécessaire | ✅ |
+| 2 — scénario 1 | 4 exécutions : 4 à 5 appels, 13 à 18 s, **1 099** et l'URL du jeu à chaque fois | ✅ |
+| 3 — scénario 2 | 3 exécutions : 3 appels, 16 s, endpoint `GET /search` de l'API Adresse avec ses paramètres | ✅ |
+| 4 — stabilité | scénario 1 : 4/4 identiques. Scénario 2 : 3/3 identiques, même séquence d'outils | ✅ |
+
+Vérification complémentaire : la commande `curl` produite par l'agent au scénario 2 a
+été exécutée et fonctionne (score 0,98, coordonnées correctes). Elle peut être lancée
+en direct comme prolongement du scénario.
 
 ## 9. Plan de repli
 

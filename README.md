@@ -28,6 +28,16 @@ uv run agent.py "Combien de points de recharge pour véhicules électriques y a-
 uv run agent.py "Trouve une API publique de géocodage d'adresses sur data.gouv.fr et explique-moi concrètement comment l'appeler."
 ```
 
+Mesures relevées le 2026-08-06 : scénario 1, 4 à 5 appels d'outils en 13 à 18 s ;
+scénario 2, 3 appels en 16 s. Les deux sont stables sur plusieurs exécutions.
+
+**Bonus pour le scénario 2** : l'agent produit une commande `curl` réellement
+exécutable. La lancer en direct est le meilleur prolongement de la démonstration.
+
+```bash
+curl "https://data.geopf.fr/geocodage/search?q=8%20avenue%20de%20la%20République%2C%2075011%20Paris&limit=1"
+```
+
 ## Configuration MCP
 
 `mcp.json` est la source unique de vérité. Il est au format des éditeurs, et se

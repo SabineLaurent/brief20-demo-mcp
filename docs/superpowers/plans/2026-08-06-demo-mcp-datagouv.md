@@ -681,3 +681,15 @@ Versions installées le 2026-08-06 : `langchain-mcp-adapters` 0.3.2, `langgraph`
 2. `uv python pin 3.12` ajouté — sans lui, l'environnement était résolu sur CPython 3.14.5.
 3. `conftest.py` vide ajouté à la racine — sinon `tests/test_agent.py` ne peut pas importer `agent`.
 4. Garde sur les variables d'environnement dans `build_model` — évite un `KeyError` avec traceback en pleine démonstration.
+5. Avertissement de dépréciation masqué : `create_react_agent` a migré vers `langchain.agents.create_agent` en LangGraph 1.0, dans un paquet non installé ici. Le message s'affichait à l'écran. Migration à envisager après la démonstration.
+6. **Session MCP persistante** au lieu de `MultiServerMCPClient.get_tools()`. Ce dernier ouvre une connexion HTTP à chaque appel d'outil — sa propre docstring l'indique — ce qui provoquait des `httpx.ConnectTimeout` intermittents (1 échec sur 8 exécutions). Le passage à `client.session()` + `load_mcp_tools(session)` a supprimé les échecs et réduit la durée d'environ 40 %.
+7. **Cadrage des sources dans le prompt système.** Décision validée avec l'utilisatrice. Sans lui, le scénario 1 renvoyait 1 099, 944 ou 1 212 selon les exécutions, car plusieurs bases IRVE et plusieurs ressources coexistent. Voir la spec §5.5 et §7.
+
+### Résultats de validation
+
+| Critère | Mesure | Verdict |
+|---|---|---|
+| 1 — test de fumée | deux `[OK]`, exit 0 ; tool calling confirmé sans `api_version` | ✅ |
+| 2 — scénario 1 | 4 exécutions : 4-5 appels, 13-18 s, 1 099 + URL | ✅ |
+| 3 — scénario 2 | 3 exécutions : 3 appels, 16 s, endpoint et paramètres corrects | ✅ |
+| 4 — stabilité | 4/4 et 3/3 identiques | ✅ |
