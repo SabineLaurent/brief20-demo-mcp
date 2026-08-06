@@ -1,6 +1,17 @@
 """Agent LangChain branché sur le serveur MCP de data.gouv.fr."""
 
+import asyncio
 import json
+import os
+import sys
+import time
+
+from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+load_dotenv()
 
 LARGEUR_ARGUMENTS = 60
 
@@ -34,3 +45,28 @@ def format_tool_result(content: str, seconds: float) -> str:
     taille = f"{len(content):,}".replace(",", " ")
     duree = f"{seconds:.1f}".replace(".", ",")
     return f"   ← {taille} caractères en {duree} s"
+
+
+async def discover_tools() -> list:
+    """Ouvre la connexion MCP et renvoie les outils exposés par le serveur."""
+    client = MultiServerMCPClient(load_servers())
+    return await client.get_tools()
+
+
+def build_model() -> ChatOpenAI:
+    """Construit le modèle Azure via l'API v1 compatible OpenAI."""
+    return ChatOpenAI(
+        model=os.environ["AZURE_DEPLOYMENT"],
+        base_url=os.environ["AZURE_BASE_URL"],
+        api_key=os.environ["AZURE_API_KEY"],
+        temperature=0,
+    )
+
+
+async def main() -> None:
+    tools = await discover_tools()
+    print(f"→ {len(tools)} outils découverts : {', '.join(o.name for o in tools)}\n")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
