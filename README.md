@@ -1,65 +1,44 @@
-# Démo MCP data.gouv.fr
+# demo-mcp
 
-Un agent LangChain branché sur le serveur MCP de data.gouv.fr, pour une
-démonstration de 10 minutes.
+Agent LangChain/LangGraph branché sur le serveur MCP public de data.gouv.fr.
+L'agent découvre les outils exposés par le serveur, les appelle en boucle ReAct
+pour répondre à une question en français, et cite l'URL data.gouv.fr de la
+source utilisée.
 
-## Mise en route
+Le serveur MCP fournit 10 outils (recherche de jeux de données, inspection des
+ressources, requêtes sur les données tabulaires, métriques). Le dépôt ne
+contient aucun code d'appel à l'API data.gouv.fr : tout passe par le protocole
+MCP.
+
+## Prérequis
+
+- Python ≥ 3.12
+- [uv](https://docs.astral.sh/uv/)
+- Un déploiement Azure AI Foundry exposant l'API v1 compatible OpenAI, avec le
+  *tool calling* activé
+
+## Installation
 
 ```bash
-cp .env.example .env    # puis renseigner les valeurs Azure
 uv sync
-uv run smoke.py         # doit afficher deux lignes [OK]
+cp .env.example .env    # puis renseigner les valeurs Azure
 ```
 
-`smoke.py` valide les deux dépendances externes **séparément** : le serveur MCP
-d'abord, le modèle Azure ensuite. En cas d'échec, le message indique lequel des
-deux maillons a lâché.
+## Configuration
 
-Le bloc MCP n'a aucune dépendance : `python3 smoke.py` fonctionne même sans
-environnement installé, ce qui permet de diagnostiquer le réseau en premier.
+### Modèle
 
-## Utilisation
+Trois variables, à renseigner dans `.env` (voir `.env.example`) :
 
-Sans argument, l'agent demande la question au clavier — plus vivant en
-démonstration qu'une commande pré-écrite, et sans souci de quoting sur les
-apostrophes françaises :
+| Variable | Description |
+| --- | --- |
+| `AZURE_BASE_URL` | URL de la ressource Azure, suffixe `/openai/v1/` compris |
+| `AZURE_API_KEY` | Clé d'API |
+| `AZURE_DEPLOYMENT` | Nom du **déploiement**, pas du modèle |
 
-```bash
-uv run agent.py
-❓ Ta question : Combien de points de recharge y a-t-il à Bordeaux ?
-```
+### Serveur MCP
 
-La question peut aussi être passée en argument :
-
-```bash
-# Scénario 1 — la question chiffrée
-uv run agent.py "Combien de points de recharge pour véhicules électriques y a-t-il à Toulouse ? Cite ta source."
-
-# Scénario 2 — la découverte d'API
-uv run agent.py "Trouve une API publique de géocodage d'adresses sur data.gouv.fr et explique-moi concrètement comment l'appeler."
-```
-
-Mesures relevées le 2026-08-06 : scénario 1, 4 à 6 appels d'outils en 16 à 20 s,
-1 099 à chaque exécution ; scénario 2, 3 appels en 14 à 15 s. Les deux sont
-stables sur plusieurs exécutions.
-
-Villes vérifiées : Toulouse (`31555`) donne 1 099, Bordeaux (`33063`) donne
-1 060. Éviter Paris et Lyon, dont les points de recharge sont éclatés entre les
-codes INSEE d'arrondissement.
-
-La réponse est produite en texte brut : le terminal ne rend pas le markdown, et
-des astérisques de gras à l'écran parasitent la ligne la plus importante.
-
-**Bonus pour le scénario 2** : l'agent produit une commande `curl` réellement
-exécutable. La lancer en direct est le meilleur prolongement de la démonstration.
-
-```bash
-curl "https://data.geopf.fr/geocodage/search?q=8%20avenue%20de%20la%20République%2C%2075011%20Paris&limit=1"
-```
-
-## Configuration MCP
-
-`mcp.json` est la source unique de vérité. Il est au format des éditeurs, et se
+`mcp.json` est la source unique de vérité. Il est au format des éditeurs et se
 copie tel quel dans le client MCP de VS Code, Cursor ou Claude Code :
 
 ```json
@@ -70,9 +49,60 @@ copie tel quel dans le client MCP de VS Code, Cursor ou Claude Code :
 }
 ```
 
-Aucune clé, aucune installation. `agent.py` convertit ce format vers celui
-attendu par `langchain-mcp-adapters` : le protocole est standardisé, le format
-du fichier de configuration ne l'est pas encore.
+Le serveur est public : aucune clé, aucune installation. `load_servers()` dans
+[agent.py](agent.py) convertir ce format vers celui attendu par
+`langchain-mcp-adapters` (`transport: streamable_http`) : le protocole est
+standardisé, le format du fichier de configuration ne l'est pas encore.
+
+## Utilisation
+
+La question peut être passée en argument :
+
+```bash
+uv run agent.py "Combien de points de recharge pour véhicules électriques y a-t-il à Toulouse ? Cite ta source."
+```
+
+Sans argument, elle est demandée au clavier :
+
+```bash
+uv run agent.py
+❓ Ta question : Combien de points de recharge y a-t-il à Bordeaux ?
+```
+
+La trace affiche chaque appel d'outil, la taille et la durée de sa réponse,
+puis la réponse finale :
+
+```text
+→ 10 outils découverts : search_datasets, search_organizations, …
+
+🔧 search_datasets(query='bornes recharge véhicules électriques', page=1, page…)
+   ← 5 026 caractères en 0,8 s
+🔧 list_dataset_resources(dataset_id='5448d3e0c751df01f85d0572')
+   ← 1 805 caractères en 0,5 s
+🔧 query_resource_data(resource_id='eb76d20a-8501-400e-b336-d85724de5435', page=1,…)
+   ← 3 509 caractères en 0,6 s
+
+💬 Toulouse compte 1 099 points de recharge pour véhicules électriques.
+
+Source :
+https://www.data.gouv.fr/datasets/base-nationale-des-irve-…
+```
+
+La réponse est produite en texte brut : le terminal ne rend pas le markdown.
+
+## Vérification de l'environnement
+
+```bash
+uv run smoke.py    # doit afficher deux lignes [OK]
+```
+
+`smoke.py` valide les deux dépendances externes **séparément** — le serveur MCP
+d'abord, le modèle Azure ensuite — et signale lequel des deux a échoué. Code de
+sortie 0 si les deux passent.
+
+Le bloc MCP n'a aucune dépendance externe : `python3 smoke.py` fonctionne même
+sans environnement installé, ce qui permet de diagnostiquer le réseau avant
+l'installation.
 
 ## Tests
 
@@ -80,25 +110,38 @@ du fichier de configuration ne l'est pas encore.
 uv run pytest -q
 ```
 
-Les fonctions pures sont couvertes par pytest. Les chemins réseau ne le sont
-pas : `smoke.py` **est** leur test, en conditions réelles. Simuler le serveur
-MCP donnerait une fausse assurance, alors que c'est justement sa disponibilité
-réelle qu'on veut vérifier avant de monter sur scène.
+Les tests couvrent les fonctions pures de `agent.py` (conversion de la
+configuration, formatage de la trace, lecture de la question). Les chemins
+réseau ne sont pas simulés : `smoke.py` en tient lieu, en conditions réelles.
 
-## Le jour de la démo
+## Structure
 
-1. `uv run smoke.py` avant de monter sur scène.
-2. Relancer les deux scénarios : la base IRVE est régénérée quotidiennement, le
-   chiffre de Toulouse aura peut-être changé.
-3. En cas de panne réseau, dérouler sur `logs/scenario1.txt` et
-   `logs/scenario2.txt`.
+| Fichier | Rôle |
+| --- | --- |
+| [agent.py](agent.py) | Agent : session MCP, découverte des outils, boucle ReAct, trace |
+| [smoke.py](smoke.py) | Test de fumée des deux dépendances externes |
+| [mcp.json](mcp.json) | Configuration du serveur MCP, format éditeur |
+| [tests/test_agent.py](tests/test_agent.py) | Tests des fonctions pures |
+| [conftest.py](conftest.py) | Fichier vide : place la racine dans le `sys.path` de pytest |
 
-Ne pas utiliser Paris ni Lyon comme exemple : leurs points de recharge sont
-répartis entre les codes INSEE d'arrondissement, et le chiffre obtenu serait
-faux. Toulouse (`31555`) et Bordeaux (`33063`) sont fiables.
+## Limites connues
+
+- **Communes à arrondissements.** Ne pas interroger Paris ni Lyon sur les points
+  de recharge : leurs enregistrements sont répartis entre les codes INSEE
+  d'arrondissement et le total obtenu serait faux. Toulouse (`31555`) et
+  Bordeaux (`33063`) donnent un résultat fiable.
+- **Chiffres mouvants.** La base nationale IRVE est régénérée quotidiennement ;
+  les valeurs renvoyées évoluent d'un jour à l'autre.
+- **Choix de la source.** Sans le prompt système de `agent.py`, qui impose la
+  ressource CSV consolidée la plus récente publiée par data.gouv.fr, l'agent
+  hésite entre plusieurs bases IRVE et renvoie un chiffre différent à chaque
+  exécution.
+- **Dépréciation.** `create_react_agent` est déprécié depuis LangGraph 1.0 au
+  profit de `langchain.agents.create_agent`, qui vit dans un paquet non installé
+  ici. L'avertissement est masqué dans `agent.py`.
 
 ## Documentation
 
-- Conception : `docs/superpowers/specs/2026-08-06-demo-mcp-datagouv-design.md`
-- Plan d'implémentation : `docs/superpowers/plans/2026-08-06-demo-mcp-datagouv.md`
-- Schémas à projeter : `docs/schema-mcp.md`
+- Conception : [docs/superpowers/specs/2026-08-06-demo-mcp-datagouv-design.md](docs/superpowers/specs/2026-08-06-demo-mcp-datagouv-design.md)
+- Plan d'implémentation : [docs/superpowers/plans/2026-08-06-demo-mcp-datagouv.md](docs/superpowers/plans/2026-08-06-demo-mcp-datagouv.md)
+</content>
